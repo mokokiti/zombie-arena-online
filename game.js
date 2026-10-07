@@ -10,6 +10,7 @@ let player = { x: 0, y: 0, r: 17, hp: 100, max: 100, speed: 260, cd: 0, ammo: 12
 let enemies = [], bullets = [], score = 0, wave = 1;
 let coins = Number(localStorage.coins || 0), rp = Number(localStorage.rp || 0), wins = 0, losses = 0;
 let weapon = Number(localStorage.weapon || 1), hpLv = Number(localStorage.hpLv || 1), kills = 0;
+let username = localStorage.username || null;
 
 const ranks = ["BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "MASTER", "GRAND MASTER"];
 
@@ -18,6 +19,7 @@ function saveLocal() {
   localStorage.rp = rp;
   localStorage.weapon = weapon;
   localStorage.hpLv = hpLv;
+  if (username) localStorage.username = username;
 }
 
 function rankName() {
@@ -26,6 +28,10 @@ function rankName() {
 
 function rpIn() {
   return rp % 100;
+}
+
+function generateFriendCode() {
+  return Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
 }
 
 function resize() {
@@ -82,11 +88,13 @@ async function login() {
     return;
   }
 
-  const email = prompt("メールアドレス");
-  if (!email) return;
+  const inputUsername = prompt("ユーザー名");
+  if (!inputUsername) return;
 
   const pass = prompt("パスワード（6文字以上）");
   if (!pass) return;
+
+  const email = `${inputUsername}@local.game`;
 
   let r = await db.auth.signInWithPassword({ email, password: pass });
   if (r.error) {
@@ -99,6 +107,7 @@ async function login() {
   }
 
   user = r.data.user;
+  username = inputUsername;
   await ensureProfile();
   renderAccount();
 }
@@ -106,6 +115,8 @@ async function login() {
 async function logout() {
   if (db) await db.auth.signOut();
   user = null;
+  username = null;
+  localStorage.removeItem("username");
   renderAccount();
 }
 
@@ -115,10 +126,11 @@ async function ensureProfile() {
   const { data } = await db.from("profiles").select("*").eq("id", user.id).maybeSingle();
 
   if (!data) {
-    const name = "Player" + Math.floor(Math.random() * 9000 + 1000);
+    const friendCode = generateFriendCode();
     const { error } = await db.from("profiles").insert({
       id: user.id,
-      name,
+      name: username,
+      friend_code: friendCode,
       rank_points: rp,
       coins,
       weapon_level: weapon,
@@ -128,6 +140,7 @@ async function ensureProfile() {
     if (error) {
       console.error("profile insert failed", error);
     }
+    localStorage.setItem(`code_${user.id}`, friendCode);
     return;
   }
 
@@ -135,15 +148,37 @@ async function ensureProfile() {
   coins = Number(data.coins || 0);
   weapon = Number(data.weapon_level || 1);
   hpLv = Number(data.hp_level || 1);
+  localStorage.setItem(`code_${user.id}`, data.friend_code || generateFriendCode());
   saveLocal();
 }
 
 function renderAccount() {
   $("account").innerHTML = user
-    ? `🟢 ${user.email}<br><button onclick="logout()">ログアウト</button>`
-    : `👤 ローカルモード<button onclick="login()">オンラインログイン</button>`;
+    ? `🟢 ${username}<br>コード: <b>${localStorage.getItem(`code_${user.id}`) || "読込中"}</b><br><button onclick="copyFriendCode()">コードコピー</button><button onclick="logout()">ログアウト</button>`
+    : `👤 ローカルモード<button onclick="login()">ログイン</button>`;
 
   $("stats").innerHTML = `🪙 ${coins}　🏆 ${rankName()} ${rpIn()}/100　⚔️ ${wins}勝 ${losses}敗`;
+
+  if (user) {
+    loadFriendCode();
+  }
+}
+
+async function loadFriendCode() {
+  if (!db || !user) return;
+  const { data } = await db.from("profiles").select("friend_code").eq("id", user.id).maybeSingle();
+  if (data) {
+    localStorage.setItem(`code_${user.id}`, data.friend_code);
+    $("account").innerHTML = `🟢 ${username}<br>コード: <b>${data.friend_code}</b><br><button onclick="copyFriendCode()">コードコピー</button><button onclick="logout()">ログアウト</button>`;
+  }
+}
+
+function copyFriendCode() {
+  const code = localStorage.getItem(`code_${user.id}`);
+  if (code) {
+    navigator.clipboard.writeText(code);
+    alert(`コード "${code}" をコピーしました！`);
+  }
 }
 
 async function persist() {
@@ -311,7 +346,7 @@ async function sendState() {
       x: player.x,
       y: player.y,
       hp: player.hp,
-      name: user?.email?.split("@")[0] || "Player"
+      name: username || "Player"
     }
   });
 }
@@ -453,7 +488,7 @@ async function disconnectRoom() {
 
 function quickMatch() {
   closePanel();
-  openPanel(`<h2>🔎 マッチング中...</h2><p>同じランク帯のプレイ��ーを探しています。</p><p class="small">一定時間、人が見つからなければAIが参加します。</p>`);
+  openPanel(`<h2>🔎 マッチング中...</h2><p>同じランク帯のプレイヤーを探しています。</p><p class="small">一定時間、人が見つからなければAIが参加します。</p>`);
   setTimeout(() => {
     closePanel();
     startGame("rank");
@@ -516,7 +551,7 @@ async function sendChat() {
       type: "broadcast",
       event: "chat",
       payload: {
-        name: user?.email?.split("@")[0] || "Player",
+        name: username || "Player",
         message: x.value.slice(0, 120)
       }
     });
@@ -528,26 +563,43 @@ async function sendChat() {
 
 async function openFriends() {
   if (!db || !user) {
-    openPanel(`<h2>👥 フレンド</h2><p>オンラインログインするとフレンド機能を使えます。</p><button onclick="login()">ログイン</button>`);
+    openPanel(`<h2>👥 フレンド</h2><p>ログインするとフレンド機能を使えます。</p><button onclick="login()">ログイン</button>`);
     return;
   }
 
+  const myCode = localStorage.getItem(`code_${user.id}`);
   const { data } = await db.from("friendships").select("*").or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
-  openPanel(`<h2>👥 フレンド</h2><input id="friendId" placeholder="相手のユーザーID"><button onclick="addFriend()">申請</button><div>${(data || []).map((x) => `<div class="row">ID: ${x.user_id === user.id ? x.friend_id : x.user_id}<span>${x.status}</span></div>`).join("") || "まだフレンドがいません"}</div>`);
+
+  openPanel(`<h2>👥 フレンド</h2>
+    <p>自分のコード: <b>${myCode}</b></p>
+    <input id="friendCode" placeholder="フレンドコード 8桁">
+    <button onclick="addFriendByCode()">追加</button>
+    <hr>
+    <div>${(data || []).map((x) => `<div class="row">ID: ${x.user_id === user.id ? x.friend_id : x.user_id}<span>${x.status}</span></div>`).join("") || "まだフレンドがいません"}</div>`);
 }
 
-async function addFriend() {
-  const x = $("friendId").value.trim();
-  if (!x) return;
+async function addFriendByCode() {
+  const code = $("friendCode").value.trim();
+  if (!code || code.length !== 8) {
+    alert("8桁のコードを入力してください");
+    return;
+  }
+
+  const { data: friendData } = await db.from("profiles").select("id").eq("friend_code", code).maybeSingle();
+  if (!friendData) {
+    alert("このコードは存在しません");
+    return;
+  }
 
   const r = await db.from("friendships").insert({
     user_id: user.id,
-    friend_id: x
+    friend_id: friendData.id
   });
 
   if (r.error) {
     alert(r.error.message);
   } else {
+    alert("フレンド申請を送信しました");
     openFriends();
   }
 }
