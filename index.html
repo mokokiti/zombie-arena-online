@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Zombie Arena Online</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <section id="menu" class="screen">
+    <h1>🧟 ZOMBIE ARENA</h1>
+    <p>オンライン 2Dシューティング</p>
+    <div id="account" class="card"></div>
+    <div class="card menu">
+      <button onclick="quickMatch()">⚔️ ランクマッチ</button>
+      <button onclick="startGame('zombie')">🧟 ゾンビ協力</button>
+      <button onclick="openShop()">🏪 ショップ</button>
+      <button onclick="openFriends()">👥 フレンド</button>
+      <button onclick="openChat()">💬 チャット</button>
+      <button onclick="openRank()">🏆 ランク</button>
+    </div>
+    <div id="stats"></div>
+    <p class="note">WASD/矢印＝移動　マウス＝照準・射撃　R＝リロード</p>
+  </section>
+
+  <section id="game" class="hidden">
+    <canvas id="canvas"></canvas>
+    <div id="hud"></div>
+    <button id="menuBtn" onclick="backToMenu()">メニュー</button>
+  </section>
+
+  <div id="panel" class="hidden">
+    <div class="panelBox">
+      <button class="close" onclick="closePanel()">×</button>
+      <div id="panelContent"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
